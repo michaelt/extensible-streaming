@@ -17,9 +17,11 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.Functor.Effects
+  exposed-modules:     Data.Functor.Effects, Streaming.Extensible
   -- other-modules:       
   other-extensions:    GADTs, TypeFamilies, TypeOperators, DeriveFunctor, DataKinds, PolyKinds, ScopedTypeVariables, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances, BangPatterns, NoMonomorphismRestriction
-  build-depends:       base >=4.8 && <4.9, transformers >=0.4 && <0.5
+  build-depends:       base >=4.8 && <4.9
+                       , transformers >=0.4 && <0.5
+                       , streaming
   -- hs-source-dirs:      
   default-language:    Haskell2010
