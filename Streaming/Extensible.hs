@@ -18,18 +18,45 @@ import qualified Streaming.Internal as S
 import qualified Streaming.Prelude as S
 import Data.Functor.Effs
 
-{- | An item of type 'Effects fs m r' is basically
-     a coroutine with 'm' as the ambient monad; its progress is broken up or \'suspended\'
-     by different \'effects\' in @fs@ which is a type-level list,  @fs :: [* -> *]@.
+{- | An item of type @Effects fs m r@ is basically a free monad over @fs@, 
+     a list or sum of effects: 
+     @fs :: [* -> *]@ . Using familiar expedients, we arranged that though 
+     the individual types listed need not be functors, the sum of them 
+     @Eff fs@ must be. So @Stream (Eff fs) m@ is also a monad if @m@ is. 
+
+     Thus it might be that by accumulating effects in a do-block 
+     you end up with something that might be rendered concrete as
+
+> type MyEffects = [State Int, Twitter, Of String, Reader Config, State String]
+
+     In fact one would rarely use such a signature, but use a system of classes
+     which record that these effects are present in the sum, without committing 
+     oneself to order, and permitting it to be fused with programs with 
+     different effects. Concretization arises as we approach the moment of 
+     \"interpretation\". 
+
+     Such an item (like anything of type @Stream f m r@) can be viewed as 
+     a coroutine with 'm' as the ambient monad. Here the 
+     the progress of events in the underlying succession is broken up or \'suspended\'
+     by different \'effects\' in @fs@. These are \"handled\"  by being somehow
+     mapped down into the ambient flow of events (which may of course be 'Identity').
 
      @Effects@  is a type synonym. One should know better, but the expansion is fairly
-     intelligible in error messages. 
+     intelligible in error messages. Everything we say maps immediately to 
+     @FreeT (Effs fs) m r@ from the 
+     <http://hackage.haskell.org/package/free-4.12.1/docs/Control-Monad-Trans-Free.html free> library and 
+     @Coroutine (Effs fs) m r@ from the 
+     <http://hackage.haskell.org/package/monad-coroutine-0.9.0.1/docs/Control-Monad-Coroutine.html monad-coroutine>
+     library, or one of the other equivalents. 
+     So modules like @Data.Functors.Effs@ should properly 
+     be independent of any particular implementation of effectful free monads or
+     coroutines. 
      
 -}
 type Effects fs m = Stream (Effs fs) m
 
 
-{- | The effects stored in an @Effectsect@ sum needn't be functors,
+{- | The effects stored in an @Effs@ sum needn't be functors,
      but are effectively \'functorized\' by an equivalent of
 
 > data Lan f r = forall x . Lan (f x) (x -> r) 
@@ -83,6 +110,7 @@ liftEff :: (Monad m, IsAt (Position f fs) f fs)
          -> (x -> r) 
          -> Effects fs m r
 liftEff fx out = yields (inject (Lan fx out))
+{-#INLINE liftEff #-}
 
 
 {- | When we have \'handled\' the various effects in a complex
@@ -99,12 +127,14 @@ runEffects str = do
   case e of
     Left r -> return r
     Right _ -> error "empty union has elements?"
-
+{-#INLINE runEffects #-}
+    
 -- for example:
 yield_
   :: (Monad m, IsAt (Position (Of a) fs) (Of a) fs) =>
      a -> Effects fs m ()
 yield_ x = liftEff (x:> ()) id
+{-#INLINE yield_ #-}
 
 
 {-|  @handle@ is an omnibus right fold over a particular effect in a stream of effects,
@@ -118,8 +148,7 @@ handle
    -> Effects (f ': fs) m r
    -> Effects fs m s
 handle a b c = effectFold a effect (\(Lan fx o) -> b fx o) c
-
-
+{-#INLINE handle #-}
 
 {-|  @effectFold@ is an omnibus right fold over a particular effect in a stream of effects;
      compare 'Streaming.streamFold' . The crucial third \"algebra\" argument is here
@@ -140,7 +169,8 @@ effectFold done_ effect_ construct_ = loop where
     S.Step u   -> case scrutinize u of
       InL f  -> construct_ (fmap loop f)
       InR fs -> S.Step (fmap loop fs)
-
+{-#INLINABLE effectFold #-}
+      
 {- | @expose@ removes an effect from the flood of events making it possible
      to operate on the stream of steps of that effect 
 
@@ -159,7 +189,7 @@ expose = loop where
           rest <- yields f
           loop rest
         InR fs' -> effect $ yields (fmap loop fs')
-
+{-#INLINABLE expose #-}
 {- | If an effect in your sum of effects happens to have a @Functor@ instance,
      draw it to the surface, treating the narrower stream of effects as
      the ambient monad, with steps of the form 'f' suspended in it.  
@@ -194,7 +224,7 @@ exposeFunctor = loop where
           rest <- yields (fmap out fx)
           loop rest
         InR fs' -> effect $ yields (fmap loop fs')
-
+{-#INLINABLE exposeFunctor #-}
 {- | Given a stream of effects broken up by steps that actually have a @Functor@ instance, 
      sink these steps into the general stream of effects
 -}
@@ -202,10 +232,12 @@ unexpose
   :: (Monad m, Functor f, IsAt (Position f fs) f fs) =>
      Stream f (Effects fs m) r -> Effects fs m r
 unexpose = run . maps (\f -> liftEff f id)
+{-#INLINE unexpose #-}
 
 
 iterF :: (Monad m, Functor f)
       => (f (Effects fs m r) -> Effects fs m r)
       -> Effects (f ': fs) m r -> Effects fs m r
 iterF op = handle return (\fx o -> op (fmap o fx))
+{-#INLINE iterF #-}
 
