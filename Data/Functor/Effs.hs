@@ -9,7 +9,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-|
-Module      : Data.Functor.Effects
+Module      : Data.Functor.Effs
 Description : Open unions (type-indexed co-products) for extensible effects.
 Copyright   : Alej Cabrera 2015, Michael Thompson 2016
 License     : BSD-3
@@ -31,7 +31,7 @@ starting point.
 
 -}
 
-module Data.Functor.Effects where
+module Data.Functor.Effs where
 
 import Data.Functor.Sum
 --------------------------------------------------------------------------------
@@ -85,9 +85,9 @@ instance (IsAt (Position f fs) f fs) => Elem f fs where
 
 --------------------------------------------------------------------------------
 
-decompose :: Effs (f ': fs) v -> Sum (Lan f) (Effs fs) v
-decompose (Here fx out)  = InL (Lan fx out)
-decompose (There v) = InR v
+scrutinize :: Effs (f ': fs) v -> Sum (Lan f) (Effs fs) v
+scrutinize (Here fx out)  = InL (Lan fx out)
+scrutinize (There v) = InR v
 
 
 
