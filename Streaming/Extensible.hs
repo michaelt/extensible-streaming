@@ -130,9 +130,7 @@ runEffects str = do
 {-#INLINE runEffects #-}
     
 -- for example:
-yield_
-  :: (Monad m, At (Of a) (Position (Of a) fs) fs) =>
-     a -> Effects fs m ()
+yield_ :: (Monad m, Elem (Of a) fs) =>  a -> Effects fs m ()
 yield_ x = liftEff (x:> ()) id
 {-#INLINE yield_ #-}
 
