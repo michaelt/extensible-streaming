@@ -4,7 +4,7 @@ module Streaming.Extensible
  , liftEff
  , runEffects
  , handle
- , effectFold
+ , foldEffect
  , expose
  , unexpose
  , exposeFunctor
@@ -145,29 +145,29 @@ handle
    -> (forall x . f x -> (x -> Effects fs m s) -> Effects fs m s)
    -> Effects (f ': fs) m r
    -> Effects fs m s
-handle a b c = effectFold a effect (\(Lan fx o) -> b fx o) c
+handle a b c = foldEffect a effect (\(Lan fx o) -> b fx o) c
 {-#INLINE handle #-}
 
-{-|  @effectFold@ is an omnibus right fold over a particular effect in a stream of effects;
+{-|  @foldEffect@ is an omnibus right fold over a particular effect in a stream of effects;
      compare 'Streaming.streamFold' . The crucial third \"algebra\" argument is here
      protected by a 'Lan' constructor, which is sometimes a bit easier to get past
      the type checker.
 -}
-effectFold
+foldEffect
   :: (Monad m)
    => (r -> Effects fs m s)
    -> (m (Effects fs m s) -> Effects fs m s)
    -> (Lan f (Effects fs m s) -> Effects fs m s)
    -> Effects (f ': fs) m r
    -> Effects fs m s
-effectFold done_ effect_ construct_ = loop where
+foldEffect done_ effect_ construct_ = loop where
   loop stream = case stream of
     S.Return r  -> done_ r
     S.Effect m  -> effect_ (liftM loop m)
     S.Step u   -> case scrutinize u of
       InL f  -> construct_ (fmap loop f)
       InR fs -> S.Step (fmap loop fs)
-{-#INLINABLE effectFold #-}
+{-#INLINABLE foldEffect #-}
       
 {- | @expose@ removes an effect from the flood of events making it possible
      to operate on the stream of steps of that effect 
