@@ -74,6 +74,23 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         putStrLn "Current site: "
         mapM_ print (M.toList site)
     
+    -- >>> main
+    -- I am a String; I was yielded.
+    -- Tweet: I used `get` and got an Int: 2
+    -- Tweet: Check out this comments page I read: "Nice comment page."
+    -- ("I am a (String, Int) pair, and was yielded: ",12)
+    -- I am a String; I was yielded.
+    -- Tweet: I used `get` and got an Int: 3
+    -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
+    -- ("I am a (String, Int) pair, and was yielded: ",12)
+    -- -------
+    -- Finished
+    -- -------
+    -- Final Int state:  4
+    -- Final Integer state:  4
+    -- Current site:
+    -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
+    -- ("welcome","hello")
 
     --------------------
     -- `tweet` effect
