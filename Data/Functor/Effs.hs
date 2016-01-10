@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -116,7 +117,7 @@ instance (fs ~ (f' ': fs'), At f n fs') => At f ('S n) fs  where
   {-#INLINE projectAt #-}
 
 --------------------------------------------------------------------------------
--- The Elem class is barely distinguishable from a synonym 
+
 class (At f (Position f fs) fs) => Elem f fs where
   inject  :: Lan f r -> Effs fs r
   project :: Effs fs r -> Maybe (Lan f r)
@@ -127,13 +128,43 @@ instance (At f (Position f fs) fs) => Elem f fs where
   project = projectAt (Index :: Index (Position f fs))
   {-#INLINE project #-}
 
-
 --------------------------------------------------------------------------------
 
 scrutinize :: Effs (f ': fs) v -> Sum (Lan f) (Effs fs) v
 scrutinize (Here fx out)  = InL (Lan fx out)
 scrutinize (There v) = InR v
 {-#INLINABLE scrutinize #-}
+
+-- -----------------------------------------------------------------------------
+-- Various utilities for mapping over particular Effs
+-- -----------------------------------------------------------------------------
+
+
+eitherEff :: (forall x . f x -> g x) 
+          -> (forall x . Effs fs x -> Effs gs x)
+          -> Effs (f ': fs) r 
+          -> Effs (g ': gs) r
+eitherEff phi psi (Here f out) = Here (phi f) out
+eitherEff phi psi (There rest) = There (psi rest)
+
+mapHere :: (forall x . f x -> g x) -> Effs (f ': fs) r -> Effs (g ': fs) r
+mapHere phi = eitherEff phi id 
+
+mapThere :: (forall x . Effs fs x -> Effs gs x) -> Effs (f ': fs) r -> Effs (f ': gs) r
+mapThere phi = eitherEff id phi
+
+forEff :: Effs (f ': fs) r -> (forall x . f x -> Effs fs x) ->  Effs fs r
+forEff e phi = loop e where
+  loop effs = case effs of
+    Here f out -> fmap out (phi f)
+    There e    -> e
+
+effMap :: Elem g fs => (forall x . f x -> g x) -> Effs (f ': fs) r -> Effs fs r
+effMap phi = loop where
+  loop effs = case effs of 
+    Here f out -> inject (Lan (phi f) out)
+    There e    -> e
+
 
 
 

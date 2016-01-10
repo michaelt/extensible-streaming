@@ -1,16 +1,17 @@
-{-#LANGUAGE RankNTypes, TypeOperators, DataKinds, FlexibleContexts #-}
+{-#LANGUAGE RankNTypes, TypeOperators, DataKinds, FlexibleContexts, GADTs #-}
 module Streaming.Extensible 
  ( Effects
  , liftEff
  , runEffects
  , handle
  , foldEffect
- , expose
- , unexpose
- , exposeFunctor
- , iterF
+ , mapEffect
+ , mapMEffect
+ , extrude
+ , unextrude
+ , extrudeLan
+ , iterEff
  , yield_
- , module Streaming
  , module Data.Functor.Effs
   ) where 
 import Streaming
@@ -174,10 +175,10 @@ foldEffect done_ effect_ construct_ = loop where
 
 -}
 
-expose :: (Monad m)
+extrudeLan :: (Monad m)
        => Effects (f ': fs) m r
        -> Stream (Lan f) (Effects fs m) r
-expose = loop where
+extrudeLan = loop where
   loop str = do
     e <- lift $ lift $ inspect str
     case e of
@@ -187,7 +188,8 @@ expose = loop where
           rest <- yields f
           loop rest
         InR fs' -> effect $ yields (fmap loop fs')
-{-#INLINABLE expose #-}
+{-#INLINABLE extrudeLan #-}
+
 {- | If an effect in your sum of effects happens to have a @Functor@ instance,
      draw it to the surface, treating the narrower stream of effects as
      the ambient monad, with steps of the form 'f' suspended in it.  
@@ -209,10 +211,10 @@ expose = loop where
      also where @c@ is a property that 'Stream f m' inherits from 'm', e.g. 
      @MonadIO@, @MonadState@, @MonadResource@ and on and on. 
  -}
-exposeFunctor  :: (Monad m, Functor f)
+extrude :: (Monad m, Functor f)
   => Effects (f ': fs) m r
   -> Stream f (Effects fs m) r
-exposeFunctor = loop where
+extrude = loop where
   loop str = do
     e <- lift $ lift $ inspect str
     case e of
@@ -222,20 +224,43 @@ exposeFunctor = loop where
           rest <- yields (fmap out fx)
           loop rest
         InR fs' -> effect $ yields (fmap loop fs')
-{-#INLINABLE exposeFunctor #-}
+{-#INLINABLE extrude #-}
+
 {- | Given a stream of effects broken up by steps that actually have a @Functor@ instance, 
      sink these steps into the general stream of effects
 -}
-unexpose
+unextrude
   :: (Monad m, Functor f, At f (Position f fs) fs) =>
      Stream f (Effects fs m) r -> Effects fs m r
-unexpose = run . maps (\f -> liftEff f id)
-{-#INLINE unexpose #-}
+unextrude = run . maps (\f -> liftEff f id)
+{-#INLINE unextrude #-}
 
-
-iterF :: (Monad m, Functor f)
+iterEff :: (Monad m, Functor f)
       => (f (Effects fs m r) -> Effects fs m r)
       -> Effects (f ': fs) m r -> Effects fs m r
-iterF op = handle return (\fx o -> op (fmap o fx))
-{-#INLINE iterF #-}
+iterEff op = handle return (\fx o -> op (fmap o fx))
+{-#INLINE iterEff #-}
 
+{- | @mapEffect@ simply adds more @g@'s to the stream of effects, without
+     handling @f@. It is thus only rational where the functor can, 
+     like @(,) a@ be simply drained at the time of handling. 
+
+-}
+mapEffect :: (Elem g fs, Elem f fs, Monad m) 
+         => (forall x . f x -> g x) 
+         -> Stream (Effs fs) m r 
+         -> Stream (Effs fs) m r  
+mapEffect phi = streamFold return effect $ \eff ->
+     case project eff of
+       Nothing -> wrap eff  
+       Just (Lan fx out) -> wrap $ inject (Lan (phi fx) out)
+
+
+
+mapMEffect :: Monad m
+        => (forall x . Lan f x -> m x)
+        -> Stream (Effs (f ': fs)) m r
+        -> Stream (Effs fs) m r
+mapMEffect phi = streamFold return effect $ \eff -> case eff of
+      Here fx out -> effect $ phi (Lan fx out)
+      There effs -> wrap effs
