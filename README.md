@@ -16,7 +16,14 @@ It is the experience of this writer - perhaps I got something wrong - that `type
     
 then for sure you will use a right fold from the leaves in interpreting, and there is no hope of streaming. Where you are using functors that admit streaming, and comprehend the discipline of properly streaming program composition, it is generally a loss. (Similarly, I think there is no reason to use `Data.Sequence` and engage in elaborate construction of a `Seq` if you are proposing a strict left fold over the elements as they come.) In streaming program composition, especially with a transformer like `FreeT` `Stream` or `Coroutine`, one systematically avoids "re-traversing binds", and retaining references to items extracted, and accumulation in general. Everything must be destroyed as soon as it is created.
 
-Whatever the merits of those remarks, here is a simple test program exhibiting the convenient definition of a few effects, summing them together in a single `do` block and running them together:
+Whatever the merits of those remarks, here is a simple test program exhibiting the convenient definition of a few effects, summing them together in a single `do` block and running them together. It 
+
+- maintains two different internal state calculations, one for Int, one for Integer
+- tweets occasional nonsense
+- yields both Strings and (Int,String) pairs
+- makes http get and post requests
+
+the "interpreters" then put perfectly trivial interpretations on these 'effects'
 
     {-# LANGUAGE GADTs #-}
     {-# LANGUAGE TypeFamilies #-}
@@ -27,47 +34,47 @@ Whatever the merits of those remarks, here is a simple test program exhibiting t
 
     module Main (main) where
     import Streaming
-    import qualified Streaming.Internal as S
-    import qualified Streaming.Prelude as S
     import Streaming.Extensible
+    import qualified Streaming.Prelude as S
     import Control.Monad
     import Data.Function ((&))
+    import qualified Data.Map as M
+
     main =  do
         let effects = do
              yield "I am a String; I was yielded."
              n <- get 
-             tweet ("Hey Twitter, I used `get` and got an Int: " ++ show n)
+             tweet ("Tweet: I used `get` and got an Int: " ++ show n)
+             _PUT "comments" "Nice comment page."
+             bytes <- _GET "comments"
+             tweet ("Tweet: Check out this comments page I read: " ++ show bytes)
              put (n+1 ::Int)
              yield ("I am a (String, Int) pair, and was yielded: ",12::Int)
              n <- get 
-             tweet ("Hey Twitter, I used `get` and got an Integer this time: " ++ show n)
+             _PUT "comments" $ "I just got the number " ++ show n
              put (n+1 ::Integer)
-             liftIO $ print "<<<Hi, this is a shameless debug message coming from IO >>>"
         effects
         effects
-   
+    
+      & pureHttp site
       & ioTweetInterpreter                   -- render Tweets to stdout
       & runState (2::Integer)                -- initialize Integer state
       & runState (2::Int)                    -- initialize Int state
       & S.stdoutLn' . exposeYieldsAt ""      -- interpret yields at String
       & S.print . exposeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
       & runEffects                           -- kill vestigial wrapping
-      
-    -- >>> main
-    -- I am a String; I was yielded.
-    -- Hey Twitter, I used `get` and got an Int: 2
-    -- ("I am a (String, Int) pair, and was yielded",12)
-    -- Hey Twitter, I used `get` and got an Integer this time: 2
-    -- "<<<Hi, this is a shameless debug message coming from IO >>>"
-    -- I am a String; I was yielded.
-    -- Hey Twitter, I used `get` and got an Int: 3
-    -- ("I am a (String, Int) pair, and was yielded",12)
-    -- Hey Twitter, I used `get` and got an Integer this time: 3
-    -- "<<<Hi, this is a shameless debug message coming from IO >>>"
-    -- (4,(4,()))    -- <--- this is ghci showing the final state calculations.
-    -- *Main
-    --
-      
+      & (>>= io)
+     where
+      io (int,(integer,(site,()))) = do
+        putStrLn "-------\nFinished\n-------"
+        putStr "Final Int state:  "
+        print int
+        putStr "Final Integer state:  "
+        print integer
+        putStrLn "Current site: "
+        mapM_ print (M.toList site)
+    
+
     --------------------
     -- `tweet` effect
     -------------------- 
@@ -120,8 +127,8 @@ Whatever the merits of those remarks, here is a simple test program exhibiting t
           Right fs -> case scrutinize fs of
             InL (Lan (Put s) out) -> loop s (out ()) 
             InL (Lan Get out)     -> loop s (out s)
-            InR fs -> S.Step (fmap (loop s) fs)
-              
+            InR fs                -> wrap (fmap (loop s) fs)
+
     --------------------
     -- `yield` effect
     --------------------             
@@ -130,7 +137,7 @@ Whatever the merits of those remarks, here is a simple test program exhibiting t
 
     yield :: (Monad m, Elem (Of a) fs) =>  a -> Effects fs m ()
     yield x = liftEff (x:> ()) id  -- compare Streaming.yield x = wrap (x :> id)
-    
+
     exposeYields  :: (Monad m)
       => Effects (Of a ': fs) m r
       -> Stream (Of a) (Effects fs m) r
@@ -139,5 +146,52 @@ Whatever the merits of those remarks, here is a simple test program exhibiting t
     exposeYieldsAt  :: (Monad m)
       => a -> Effects (Of a ': fs) m r
       -> Stream (Of a) (Effects fs m) r
-    exposeYieldsAt a = exposeFunctor    
-              
+    exposeYieldsAt a = exposeFunctor   
+
+
+    type Bytes = String
+    type Path = String
+
+    data Http a where
+      GET :: Path -> Http Bytes
+      PUT :: Path -> Bytes -> Http Bytes
+      POST :: Path -> Bytes -> Http Bytes
+      DELETE :: Path -> Http Bytes
+
+    _GET :: (Monad m, Elem Http fs) => Path -> Effects fs m Bytes
+    _GET path = liftEff (GET path) id 
+
+    _PUT :: (Monad m, Elem Http fs) =>
+         Path -> Bytes -> Effects fs m Bytes
+    _PUT path bytes = liftEff (PUT path bytes) id
+
+    _POST :: (Monad m, Elem Http fs) =>  Path -> Bytes -> Effects fs m Bytes
+    _POST path bytes = liftEff (POST path bytes) id
+
+    _DELETE :: (Monad m, Elem Http fs) => Path -> Effects fs m Bytes
+    _DELETE path = liftEff (DELETE path) id
+
+    site = M.fromList [("welcome","hello")]
+
+    pureHttp = loop where
+      loop :: Monad m   -- the type signature is needed here
+            => M.Map Bytes Bytes 
+            -> Stream (Effs (Http ': fs)) m r 
+            -> Stream (Effs fs) m (M.Map Bytes Bytes,r)
+      loop m str = do
+        e <- lift $ inspect str
+        case e of
+          Left r -> return (m, r)
+          Right fs -> case scrutinize fs of
+            InL (Lan (GET p) out) -> case M.lookup p m of
+              Nothing -> loop m (out "404") 
+              Just b  -> loop m (out b) 
+            InL (Lan (POST p b) out) -> loop (M.insert p b m) (out $ "posted " ++ p) 
+            InL (Lan (DELETE p) out) -> case M.lookup p m of
+              Nothing -> loop m (out $ p ++ " doesn't exist")
+              Just b  -> loop (M.delete p m) (out $ "deleted" ++ p)
+            InL (Lan (PUT p b) out)  -> case M.lookup "comments" m of
+              Nothing -> loop (M.insert "comments" b m) (out "comments page created")
+              Just a  -> loop (M.insert "comments" (a++"\n" ++ b) m) (out "comment added")
+            InR fs                   -> wrap (fmap (loop m) fs)
+        
