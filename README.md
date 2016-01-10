@@ -17,11 +17,11 @@
     import Data.Function ((&))
     main =  do
         let effects = do
-             yield_ "I am a String; I was yielded"
+             yield "I am a String; I was yielded"
              n <- get 
              tweet ("Hey Twitter, I used `get` and got an Int: " ++ show n)
              put (n+1 ::Int)
-             yield_ ("I am a pair of a String and an Int, and was yielded",12::Int)
+             yield ("I am a pair of a String and an Int, and was yielded",12::Int)
              n <- get 
              tweet ("Hey Twitter, I used `get` and got an Integer this time: " ++ show n)
              put (n+1 ::Integer)
@@ -35,37 +35,7 @@
       & S.stdoutLn' . exposeYieldsAt ""      -- interpret yields at String
       & S.print . exposeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
       & runEffects                           -- kill vestigial wrapping
-
-
-    --------------------------
-    -- `get` and `put` effects
-    -------------------------- 
-    data State s r where
-      Get :: State s s
-      Put :: s -> State s ()
-
-    get :: (Monad m, Elem (State s) fs) => Effects fs m s
-    get = liftEff Get id 
-
-    put :: (Monad m, Elem (State s) fs) => s -> Effects fs m ()
-    put s = liftEff (Put s) (\() -> ())
-
-
-    runState
-        :: Monad m =>
-           s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
-    runState = loop where
-      loop :: Monad m => s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
-      loop s str = do
-        e <- lift $ inspect str
-        case e of
-          Left r -> return (s,r)
-          Right fs -> case scrutinize fs of
-            InL (Lan (Put s) out) -> loop s (out ()) 
-            InL (Lan Get out)     -> loop s (out s)
-            InR fs -> S.Step (fmap (loop s) fs)
-        
-        
+      
     --------------------
     -- `tweet` effect
     -------------------- 
@@ -106,11 +76,45 @@
                   . intercalates (S.yield str) 
                   . chunksOf n 
                   . exposeTweets
+
+
+    --------------------------
+    -- `get` and `put` effects
+    -------------------------- 
+    data State s r where
+      Get :: State s s
+      Put :: s -> State s ()
+
+    get :: (Monad m, Elem (State s) fs) => Effects fs m s
+    get = liftEff Get id 
+
+    put :: (Monad m, Elem (State s) fs) => s -> Effects fs m ()
+    put s = liftEff (Put s) (\() -> ())
+
+
+    runState
+        :: Monad m =>
+           s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
+    runState = loop where
+      loop :: Monad m => s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
+      loop s str = do
+        e <- lift $ inspect str
+        case e of
+          Left r -> return (s,r)
+          Right fs -> case scrutinize fs of
+            InL (Lan (Put s) out) -> loop s (out ()) 
+            InL (Lan Get out)     -> loop s (out s)
+            InR fs -> S.Step (fmap (loop s) fs)
+        
+      
               
     --------------------
     -- `yield` effect
     --------------------             
 
+    yield :: (Monad m, Elem (Of a) fs) =>  a -> Effects fs m ()
+    yield x = liftEff (x:> ()) id
+    
     exposeYields  :: (Monad m)
       => Effects (Of a ': fs) m r
       -> Stream (Of a) (Effects fs m) r
