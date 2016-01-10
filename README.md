@@ -8,7 +8,7 @@ On the other hand, though, what could be more pleasing than to work with an exte
 
 Actually, the items in `Effs fs` needn't be functors, nevertheless, by familiar tricks, `Eff fs` always is, and so we can stream such a bouquet of effects as we please. 
 
-There isn't any need for a special extensible effects library, in particular for a special monad. We just need a sum-of-functors (or rather -non-functors) functor containing `scrutinize` and `inject` to put things into the sum and extract them.  And then we need a few combinators, like `liftEff` and `runEffects` and `foldEffect` to help with the construction of proper effects and with folding over the stream of them.  
+There isn't any need for a special extensible effects library, in particular for a special monad. We just need a sum-of-functors (or rather -non-functors) functor containing `scrutinize` and `inject` to put things into the sum and extract them.  Such a thing should be put alongside e.g. `Data.Functor.Sum` in the `transformers` library, or something like that. Then any construction anywhere that can make use of a functor constraint can make use of this sort of sum or union of functors and quasi-functors.  Here, we are using `Stream f m r`, and just need a few combinators, like `liftEff` and `runEffects` and `foldEffect` to help with the construction of proper effects and with folding over the stream of them.  
 
 It is the experience of this writer - perhaps I got something wrong - that `type-aligned` is of value only where one is operating with a functor that splits, like 
 
@@ -16,9 +16,7 @@ It is the experience of this writer - perhaps I got something wrong - that `type
     
 then for sure you will use a right fold from the leaves in interpreting, and there is no hope of streaming. Where you are using functors that admit streaming, and comprehend the discipline of properly streaming program composition, it is generally a loss. (Similarly, I think there is no reason to use `Data.Sequence` and engage in elaborate construction of a `Seq` if you are proposing a strict left fold over the elements as they come.) In streaming program composition, especially with a transformer like `FreeT` `Stream` or `Coroutine`, one systematically avoids "re-traversing binds", and retaining references to items extracted, and accumulation in general. Everything must be destroyed as soon as it is created.
 
-Whatever the merits of those remarks, here is a silly test program exhibiting the prompt definition of a few effects, summing them together in a single `do` block and running them together:
-
-
+Whatever the merits of those remarks, here is a simple test program exhibiting the convenient definition of a few effects, summing them together in a single `do` block and running them together:
 
     {-# LANGUAGE GADTs #-}
     {-# LANGUAGE TypeFamilies #-}
@@ -36,11 +34,11 @@ Whatever the merits of those remarks, here is a silly test program exhibiting th
     import Data.Function ((&))
     main =  do
         let effects = do
-             yield "I am a String; I was yielded"
+             yield "I am a String; I was yielded."
              n <- get 
              tweet ("Hey Twitter, I used `get` and got an Int: " ++ show n)
              put (n+1 ::Int)
-             yield ("I am a pair of a String and an Int, and was yielded",12::Int)
+             yield ("I am a (String, Int) pair, and was yielded: ",12::Int)
              n <- get 
              tweet ("Hey Twitter, I used `get` and got an Integer this time: " ++ show n)
              put (n+1 ::Integer)
@@ -56,17 +54,17 @@ Whatever the merits of those remarks, here is a silly test program exhibiting th
       & runEffects                           -- kill vestigial wrapping
       
     -- >>> main
-    -- I am a String; I was yielded
+    -- I am a String; I was yielded.
     -- Hey Twitter, I used `get` and got an Int: 2
-    -- ("I am a pair of a String and an Int, and was yielded",12)
+    -- ("I am a (String, Int) pair, and was yielded",12)
     -- Hey Twitter, I used `get` and got an Integer this time: 2
     -- "<<<Hi, this is a shameless debug message coming from IO >>>"
-    -- I am a String; I was yielded
+    -- I am a String; I was yielded.
     -- Hey Twitter, I used `get` and got an Int: 3
-    -- ("I am a pair of a String and an Int, and was yielded",12)
+    -- ("I am a (String, Int) pair, and was yielded",12)
     -- Hey Twitter, I used `get` and got an Integer this time: 3
     -- "<<<Hi, this is a shameless debug message coming from IO >>>"
-    -- (4,(4,()))
+    -- (4,(4,()))    -- <--- this is ghci showing the final state calculations.
     -- *Main
     --
       
