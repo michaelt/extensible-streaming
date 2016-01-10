@@ -49,24 +49,24 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
              bytes <- _GET "comments"
              tweet ("Tweet: Check out this comments page I read: " ++ show bytes)
              put (n+1 ::Int)
-             yield ("I am a (String, Int) pair, and was yielded: ",12::Int)
+             yield ("I am a (String, Int) pair, and was yielded: ",n+1::Int)
              n <- get 
              _PUT "comments" $ "I just got the number " ++ show n
              put (n+1 ::Integer)
         effects
         effects
     
-      & pureHttp site
+      & pureHttp site                        
       & ioTweetInterpreter                   -- render Tweets to stdout
       & runState (2::Integer)                -- initialize Integer state
       & runState (2::Int)                    -- initialize Int state
-      & S.stdoutLn' . exposeYieldsAt ""      -- interpret yields at String
-      & S.print . exposeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
+      & S.stdoutLn' . extrudeYieldsAt ""      -- interpret yields at String
+      & S.print . extrudeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
       & runEffects                           -- kill vestigial wrapping
       & (>>= io)
      where
       io (int,(integer,(site,()))) = do
-        putStrLn "-------\nFinished\n-------"
+        putStrLn "\n-------\nFinished\n-------"
         putStr "Final Int state:  "
         print int
         putStr "Final Integer state:  "
@@ -74,23 +74,6 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         putStrLn "Current site: "
         mapM_ print (M.toList site)
     
-    -- >>> main
-    -- I am a String; I was yielded.
-    -- Tweet: I used `get` and got an Int: 2
-    -- Tweet: Check out this comments page I read: "Nice comment page."
-    -- ("I am a (String, Int) pair, and was yielded: ",12)
-    -- I am a String; I was yielded.
-    -- Tweet: I used `get` and got an Int: 3
-    -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
-    -- ("I am a (String, Int) pair, and was yielded: ",12)
-    -- -------
-    -- Finished
-    -- -------
-    -- Final Int state:  4
-    -- Final Integer state:  4
-    -- Current site:
-    -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
-    -- ("welcome","hello")
 
     --------------------
     -- `tweet` effect
@@ -101,27 +84,23 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
 
     tweet str = liftEff (Twitter str) (\() -> ()) 
 
-    tweets = do
-      tweet "extensible"
-      tweet "effects"
+
+    handleTweets :: (Monad m)  => (String -> m ()) -> Effects (Twitter ': fs) m r -> Effects fs m r
+    handleTweets act = mapMEffect $ \(Lan (Twitter str) out) -> act str >> return (out ())
 
 
-    handleTweets
-       :: (Monad m)  => (String -> m ()) -> Effects (Twitter ': fs) m r -> Effects fs m r
-    handleTweets act = foldEffect return effect go where
-      go (Lan (Twitter str) out)  = lift (act str) >> out ()
-
-    exposeTweets 
+    extrudeTweets 
       :: Monad m => Effects (Twitter ': fs) m r -> Stream (Of String) (Effects fs m) r
-    exposeTweets = maps (\(Lan (Twitter s) out) -> (s :> out ()) ) . expose
+    extrudeTweets = maps (\(Lan (Twitter s) out) -> (s :> out ()) ) . extrudeLan
 
     ioTweetInterpreter = handleTweets (liftIO . putStrLn)
-    pureTweetInterpreter = S.toList . exposeTweets
+    pureTweetInterpreter = S.toList . extrudeTweets
 
 
     --------------------------
     -- `get` and `put` effects
     -------------------------- 
+    
     data State s r where
       Get :: State s s
       Put :: s -> State s ()
@@ -132,9 +111,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
     put :: (Monad m, Elem (State s) fs) => s -> Effects fs m ()
     put s = liftEff (Put s) (\() -> ())
 
-    runState
-        :: Monad m =>
-           s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
+    runState :: Monad m => s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
     runState = loop where
       loop :: Monad m => s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
       loop s str = do
@@ -146,6 +123,8 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
             InL (Lan Get out)     -> loop s (out s)
             InR fs                -> wrap (fmap (loop s) fs)
 
+    -- runState' :: Monad m => s -> Stream (Effs (State s ': fs)) m r -> Stream (Effs fs) m (s,r)
+
     --------------------
     -- `yield` effect
     --------------------             
@@ -155,21 +134,25 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
     yield :: (Monad m, Elem (Of a) fs) =>  a -> Effects fs m ()
     yield x = liftEff (x:> ()) id  -- compare Streaming.yield x = wrap (x :> id)
 
-    exposeYields  :: (Monad m)
+    extrudeYields  :: (Monad m)
       => Effects (Of a ': fs) m r
       -> Stream (Of a) (Effects fs m) r
-    exposeYields = exposeFunctor
+    extrudeYields = extrude
 
-    exposeYieldsAt  :: (Monad m)
+    extrudeYieldsAt  :: (Monad m)
       => a -> Effects (Of a ': fs) m r
       -> Stream (Of a) (Effects fs m) r
-    exposeYieldsAt a = exposeFunctor   
+    extrudeYieldsAt a = extrude 
 
+
+    --------------------
+    -- HTTP effects
+    --------------------      
 
     type Bytes = String
     type Path = String
 
-    data Http a where
+    data Http a where -- compare to the 'normal' (functor) type in http://degoes.net/articles/modern-fp/
       GET :: Path -> Http Bytes
       PUT :: Path -> Bytes -> Http Bytes
       POST :: Path -> Bytes -> Http Bytes
@@ -190,6 +173,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
 
     site = M.fromList [("welcome","hello")]
 
+    -- this in dire need of a combinator ...
     pureHttp = loop where
       loop :: Monad m   -- the type signature is needed here
             => M.Map Bytes Bytes 
@@ -212,3 +196,5 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
               Just a  -> loop (M.insert "comments" (a++"\n" ++ b) m) (out "comment added")
             InR fs                   -> wrap (fmap (loop m) fs)
         
+
+
