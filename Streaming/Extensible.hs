@@ -105,7 +105,7 @@ type Effects fs m = Stream (Effs fs) m
      that the individual effects need not have functor instances. 
 -}
 
-liftEff :: (Monad m, IsAt (Position f fs) f fs) 
+liftEff :: (Monad m, At f (Position f fs) fs) 
          => f x 
          -> (x -> r) 
          -> Effects fs m r
@@ -131,7 +131,7 @@ runEffects str = do
     
 -- for example:
 yield_
-  :: (Monad m, IsAt (Position (Of a) fs) (Of a) fs) =>
+  :: (Monad m, At (Of a) (Position (Of a) fs) fs) =>
      a -> Effects fs m ()
 yield_ x = liftEff (x:> ()) id
 {-#INLINE yield_ #-}
@@ -229,7 +229,7 @@ exposeFunctor = loop where
      sink these steps into the general stream of effects
 -}
 unexpose
-  :: (Monad m, Functor f, IsAt (Position f fs) f fs) =>
+  :: (Monad m, Functor f, At f (Position f fs) fs) =>
      Stream f (Effects fs m) r -> Effects fs m r
 unexpose = run . maps (\f -> liftEff f id)
 {-#INLINE unexpose #-}

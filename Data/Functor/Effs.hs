@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DataKinds, PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, FlexibleContexts #-}
@@ -31,9 +32,11 @@ In @freer@, the similar type, @Union@, has no functor instance;
 this is rather supplied by the @Eff@ monad which is then defined in terms of it.  
 @freer@ then uses type aligned sequences of Kleisli arrows to represent the free monad
 we are looking for. The union type and the free monad implementation are thus
-glued together, both taking particular forms. It is the experience of this 
-library-writer that type-aligned device is /incredibly/ expensive. Where programs are 
-written in properly streaming style, nothing whatever is to be gained by it.
+glued together, both taking particular forms. 
+
+It is the experience of this library-writer that type-aligned device is 
+very expensive. Where programs are written in properly streaming style, 
+nothing whatever is to be gained by it.
 
 
 Nevertheless, the union of functors approach has its own costs. 
@@ -63,6 +66,7 @@ import Data.Functor.Sum
 data Nat = S Nat | Z
 data Index (n :: Nat) = Index
 data Token (f :: * -> *) = Token
+data Tag (fs ::[* -> *]) = Tag
 
 type family Position (f :: * -> *) fs :: Nat where
   Position f (f ': fs)  = 'Z
@@ -71,8 +75,8 @@ type family Position (f :: * -> *) fs :: Nat where
 --------------------------------------------------------------------------------
 
 data Effs (fss :: [ * -> * ]) v where
-  Here  :: forall f fs x v . f x -> (x -> v) -> Effs (f ': fs) v
-  There :: Effs fs v    -> Effs (f ': fs) v
+  Here  :: forall f fs x v . !(f x) -> (x -> v) -> Effs (f ': fs) v
+  There :: !(Effs fs v)    -> Effs (f ': fs) v
 
 instance Functor (Effs fs) where
   fmap f (Here fa out)  = Here fa (f . out)
@@ -86,42 +90,43 @@ instance Functor (Effs fs) where
      over a stream with many non-functor breaks \'suspended\' in it.
   
   -}
-data Lan f r = forall x . Lan (f x) (x -> r)
+data Lan f r = forall x . Lan !(f x) (x -> r)
 instance Functor (Lan f) where 
   fmap f (Lan fx out) = Lan fx (f . out)
   {-#INLINE fmap #-}
-  
+
 --------------------------------------------------------------------------------
 
-class IsAt (n :: Nat) f fs where
+class At f (n :: Nat) fs where
   injectAt  :: Index n -> Lan f r -> Effs fs r
   projectAt :: Index n -> Effs fs r -> Maybe (Lan f r)
 
-instance (fs ~ (f ': fs')) => IsAt 'Z f fs  where
-  injectAt _  (Lan f out)  = Here f out
+instance (fs ~ (f ': fs')) => At f 'Z fs  where
+  injectAt Index  (Lan f out)  = Here f out
   {-#INLINE injectAt #-}
-  projectAt _ (Here x out) = Just (Lan x out)
-  projectAt _ _            = Nothing
+  projectAt Index (Here x out) = Just (Lan x out)
+  projectAt _ _                = Nothing
   {-#INLINE projectAt #-}
-  
-instance (fs ~ (f' ': fs'), IsAt n f fs') => IsAt ('S n) f fs  where
-  injectAt _  f          = There (injectAt (Index :: Index n) f)
+
+instance (fs ~ (f' ': fs'), At f n fs') => At f ('S n) fs  where
+  injectAt Index  f          = There (injectAt (Index :: Index n) f)
   {-#INLINE injectAt #-}
-  projectAt _ (There x)  = projectAt (Index :: Index n) x
-  projectAt _ (Here _ _) = Nothing
+  projectAt Index (There x)  = projectAt (Index :: Index n) x
+  projectAt Index (Here _ _) = Nothing
   {-#INLINE projectAt #-}
 
 --------------------------------------------------------------------------------
-
-class (IsAt (Position f fs) f fs) => Elem f fs where
+-- The Elem class is barely distinguishable from a synonym 
+class (At f (Position f fs) fs) => Elem f fs where
   inject  :: Lan f r -> Effs fs r
   project :: Effs fs r -> Maybe (Lan f r)
 
-instance (IsAt (Position f fs) f fs) => Elem f fs where
-  inject  = injectAt (Index :: Index (Position f fs))
+instance (At f (Position f fs) fs) => Elem f fs where
+  inject = injectAt (Index :: Index (Position f fs))
   {-#INLINE inject  #-}
   project = projectAt (Index :: Index (Position f fs))
   {-#INLINE project #-}
+
 
 --------------------------------------------------------------------------------
 
