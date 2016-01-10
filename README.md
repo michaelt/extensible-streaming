@@ -1,5 +1,8 @@
 # extensible-streaming
 
+It is an apriori of the extensible effects advertisement campaign that we are trying to avoid
+monad transformers. But why would I want to resist monad transformers? On the other hand, though, what could be more pleasing than to work with an extensible sum of functors? -- like the `Eff fs` defined here, more or less following the `freer` package. Actually, the items in `Eff fs` needn't be functors, nevertheless, by familiar tricks, `Eff fs` always is, and so we can stream such a bouquet of effects as we please:
+
 
     {-# LANGUAGE GADTs #-}
     {-# LANGUAGE TypeFamilies #-}
@@ -35,6 +38,21 @@
       & S.stdoutLn' . exposeYieldsAt ""      -- interpret yields at String
       & S.print . exposeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
       & runEffects                           -- kill vestigial wrapping
+      
+    -- >>> main
+    -- I am a String; I was yielded
+    -- Hey Twitter, I used `get` and got an Int: 2
+    -- ("I am a pair of a String and an Int, and was yielded",12)
+    -- Hey Twitter, I used `get` and got an Integer this time: 2
+    -- "<<<Hi, this is a shameless debug message coming from IO >>>"
+    -- I am a String; I was yielded
+    -- Hey Twitter, I used `get` and got an Int: 3
+    -- ("I am a pair of a String and an Int, and was yielded",12)
+    -- Hey Twitter, I used `get` and got an Integer this time: 3
+    -- "<<<Hi, this is a shameless debug message coming from IO >>>"
+    -- (4,(4,()))
+    -- *Main
+    --
       
     --------------------
     -- `tweet` effect
