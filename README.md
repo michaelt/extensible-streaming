@@ -41,18 +41,18 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
     import qualified Data.Map as M
 
     main =  do
-        let effects = do
-             yield "I am a String; I was yielded."
-             n <- get 
-             tweet ("Tweet: I used `get` and got an Int: " ++ show n)
-             _PUT "comments" "Nice comment page."
-             bytes <- _GET "comments"
-             tweet ("Tweet: Check out this comments page I read: " ++ show bytes)
-             put (n+1 ::Int)
-             yield ("I am a (String, Int) pair, and was yielded: ",n+1::Int)
-             n <- get 
-             _PUT "comments" $ "I just got the number " ++ show n
-             put (n+1 ::Integer)
+        let effects = do                                           -- Superimposed effects:
+             yield "I am a String; I was yielded."                          -- yield String
+             n <- get                                                       -- get Int state
+             tweet ("Tweet: I used `get` and got an Int: " ++ show n)       -- tweet
+             _PUT "comments" "Nice comment page."                           -- http put
+             bytes <- _GET "comments"                                       -- http get
+             tweet ("Tweet: Check out this comments page: " ++ show bytes)  -- tweet
+             put (n+1 ::Int)                                                -- put Int state
+             yield ("A (String, Int) pair is hereby yielded: ",n+1::Int)    -- yield (String,Int)
+             n <- get                                                       -- get Integer state
+             _PUT "comments" $ "I just got the number " ++ show n           -- http put
+             put (n+1 ::Integer)                                            -- put Integer state
         effects
         effects
 
