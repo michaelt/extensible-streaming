@@ -55,7 +55,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
              put (n+1 ::Integer)
         effects
         effects
-    
+
       & pureHttp site                        
       & ioTweetInterpreter                   -- render Tweets to stdout
       & runState (2::Integer)                -- initialize Integer state
@@ -74,6 +74,25 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         putStrLn "Current site: "
         mapM_ print (M.toList site)
     
+    -- >>> main
+    -- I am a String; I was yielded.
+    -- Tweet: I used `get` and got an Int: 2
+    -- Tweet: Check out this comments page I read: "Nice comment page."
+    -- ("I am a (String, Int) pair, and was yielded: ",3)
+    -- I am a String; I was yielded.
+    -- Tweet: I used `get` and got an Int: 3
+    -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
+    -- ("I am a (String, Int) pair, and was yielded: ",4)
+    --
+    -- -------
+    -- Finished
+    -- -------
+    -- Final Int state:  4
+    -- Final Integer state:  4
+    -- Current site:
+    -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
+    -- ("welcome","hello")
+
 
     --------------------
     -- `tweet` effect
@@ -100,7 +119,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
     --------------------------
     -- `get` and `put` effects
     -------------------------- 
-    
+
     data State s r where
       Get :: State s s
       Put :: s -> State s ()
@@ -195,6 +214,6 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
               Nothing -> loop (M.insert "comments" b m) (out "comments page created")
               Just a  -> loop (M.insert "comments" (a++"\n" ++ b) m) (out "comment added")
             InR fs                   -> wrap (fmap (loop m) fs)
-        
+    
 
 

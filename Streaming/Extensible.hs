@@ -21,29 +21,32 @@ import Data.Functor.Effs
 
 {- | An item of type @Effects fs m r@ is basically a free monad over @fs@, 
      a list or sum of effects: 
-     @fs :: [* -> *]@ . Using familiar expedients, we arranged that though 
+     @fs :: [* -> *]@ . We arranged that though 
      the individual types listed need not be functors, the sum of them 
-     @Eff fs@ must be. So @Stream (Eff fs) m@ is also a monad if @m@ is. 
+     @Eff fs@ must be. Consequently, @Stream (Eff fs) m@ will always be a 
+     monad if @m@ is. 
 
-     Thus it might be that by accumulating effects in a do-block 
+     Thus it might be that by accumulating different sorts of effect in a do-block 
      you end up with something that might be rendered concrete as
 
 > type MyEffects = [State Int, Twitter, Of String, Reader Config, State String]
 
-     In fact one would rarely use such a signature, but use a system of classes
-     which record that these effects are present in the sum, without committing 
+     In fact one would rarely use such a signature, but use a system of type classes
+     which claim that these effects are present in the sum, without committing 
      oneself to order, and permitting it to be fused with programs with 
-     different effects. Concretization arises as we approach the moment of 
-     \"interpretation\". 
+     different effects. Ordering are then imposed on 
+     the program as we approach the moment of \"interpretation\". 
 
-     Such an item (like anything of type @Stream f m r@) can be viewed as 
+     An item of type @Stream (Eff fs) m@  (like anything of type @Stream f m r@) 
+     can be viewed as 
      a coroutine with 'm' as the ambient monad. Here the 
-     the progress of events in the underlying succession is broken up or \'suspended\'
+     the progress of events in the underlying or ambient succession is broken up 
+     or \'suspended\'
      by different \'effects\' in @fs@. These are \"handled\"  by being somehow
      mapped down into the ambient flow of events (which may of course be 'Identity').
 
      @Effects@  is a type synonym. One should know better, but the expansion is fairly
-     intelligible in error messages. Everything we say maps immediately to 
+     intelligible in error messages. Everything we do could as well be done with
      @FreeT (Effs fs) m r@ from the 
      <http://hackage.haskell.org/package/free-4.12.1/docs/Control-Monad-Trans-Free.html free> library and 
      @Coroutine (Effs fs) m r@ from the 
@@ -57,7 +60,7 @@ import Data.Functor.Effs
 type Effects fs m = Stream (Effs fs) m
 
 
-{- | The effects stored in an @Effs@ sum needn't be functors,
+{- | The effects stored in a sum of the form @Effs fs@ needn't be functors,
      but are effectively \'functorized\' by an equivalent of
 
 > data Lan f r = forall x . Lan (f x) (x -> r) 
@@ -70,8 +73,9 @@ type Effects fs m = Stream (Effs fs) m
      which always has a functor instance no matter how trashy f is.
 
      So our standard way of lifting an effect into a stream of many effects
-     has that stereotyped form of @liftEff@  So, for example, taking a right-strict pair
-     @Of a r@ to represent the @yield@ statement, whe might write:
+     has that stereotyped form of @liftEff@, requiring a trivial second argument for a function.  
+     So, for example, taking a right-strict pair
+     @Of a r@ to represent the @yield@ statement, we will write:
 
 > yield x = liftEff (x :> ()) id
 
@@ -85,34 +89,31 @@ type Effects fs m = Stream (Effs fs) m
 >   Get :: State s s
 >   Put :: a -> State s ()
 
-    which is /way/ not a functor, we would write
+    which is emphatically not a functor, we would write
 
-> get = liftEff Get id 
+> get = liftEff Get id  -- here 'id :: s -> s' where s is the type of the state.
 > put s = liftEff (Put s) (\() -> ())
 
      Now we are ready to use sensible looking combinators in an extensible do-block.
 
 > incr_both = do
->  n <- get
->  put (succ n :: Int)
->  m <- get
->  put (succ m :: Integer)
+>   n <- get
+>   put (succ n :: Int)
+>   m <- get
+>   put (succ m :: Integer)
 
-     Here we are collecting state under two headings, @Int@ and @Integer@. Note
+     Here we are /collecting state under two headings/, @Int@ and @Integer@. Note
      the necessity of forcing line-by-line monomorphism, which is characteristic
      of all \"extensible effects\" approaches.
-     
-     Each interpreter, in collapsing such a stream, must also reckon with the fact 
-     that the individual effects need not have functor instances. 
 -}
 
-liftEff :: (Monad m, At f (Position f fs) fs) 
+liftEff :: (Monad m, At (Place f fs) f fs) 
          => f x 
          -> (x -> r) 
          -> Effects fs m r
-liftEff fx out = yields (inject (Lan fx out))
+liftEff fx out = S.Step (fmap S.Return (inject (Lan fx out)))
 {-#INLINE liftEff #-}
-
+-- yields fr = Step (fmap Return fr)
 
 {- | When we have \'handled\' the various effects in a complex
      stream of effects, e.g. @[State Int, Twitter, Of String, Reader Int]@ we
@@ -129,16 +130,15 @@ runEffects str = do
     Left r -> return r
     Right _ -> error "empty union has elements?"
 {-#INLINE runEffects #-}
-    
+
 -- for example:
-yield_ :: (Monad m, Elem (Of a) fs) =>  a -> Effects fs m ()
+yield_ :: (Monad m, Elem (Of a) fs) => a -> Effects fs m ()
 yield_ x = liftEff (x:> ()) id
 {-#INLINE yield_ #-}
 
 
 {-|  @handle@ is an omnibus right fold over a particular effect in a stream of effects,
      eliminating the particular effect from the progress of effects;
-     The crucial third \"algebra\" argument has a rank 2 type.
 -}
 handle
    :: Monad m
@@ -170,9 +170,8 @@ foldEffect done_ effect_ construct_ = loop where
       InR fs -> S.Step (fmap loop fs)
 {-#INLINABLE foldEffect #-}
       
-{- | @expose@ removes an effect from the flood of events making it possible
-     to operate on the stream of steps of that effect 
-
+{- | See @extrude@. This just covers for the fact the @f@
+     need not be a functor. 
 -}
 
 extrudeLan :: (Monad m)
@@ -226,11 +225,12 @@ extrude = loop where
         InR fs' -> effect $ yields (fmap loop fs')
 {-#INLINABLE extrude #-}
 
-{- | Given a stream of effects broken up by steps that actually have a @Functor@ instance, 
+{- | Given a stream of effects broken up by steps of a type 
+     that have a bona fide @Functor@ instance, 
      sink these steps into the general stream of effects
 -}
 unextrude
-  :: (Monad m, Functor f, At f (Position f fs) fs) =>
+  :: (Monad m, Functor f, At (Place f fs) f fs) =>
      Stream f (Effects fs m) r -> Effects fs m r
 unextrude = run . maps (\f -> liftEff f id)
 {-#INLINE unextrude #-}
@@ -255,7 +255,8 @@ mapEffect phi = streamFold return effect $ \eff ->
        Nothing -> wrap eff  
        Just (Lan fx out) -> wrap $ inject (Lan (phi fx) out)
 
-
+{- | Sink the outermost effect into the ambient monad
+  -}
 
 mapMEffect :: Monad m
         => (forall x . Lan f x -> m x)

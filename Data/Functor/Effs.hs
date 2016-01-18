@@ -37,8 +37,7 @@ glued together, both taking particular forms.
 
 It is the experience of this library-writer that type-aligned device is 
 very expensive. Where programs are written in properly streaming style, 
-nothing whatever is to be gained by it.
-
+nothing whatever is to be gained by it. But who knows?
 
 Nevertheless, the union of functors approach has its own costs. 
 The author of @freer@, Alej Cabrera, comments on the use of 
@@ -58,20 +57,33 @@ advanced type features as follows:
 
 -}
 
-module Data.Functor.Effs where
+module Data.Functor.Effs (
+   Effs (..)
+   , Lan (..)
+   , At (..)
+   , Place (..)
+   , Elem (..)
+   , scrutinize
+   , mapHere
+   , mapThere
+   , eitherEff
+   , forEff
+   , effMap
+   ) where
 
 import Data.Functor.Sum
 --------------------------------------------------------------------------------
                          -- Implementation --
 --------------------------------------------------------------------------------
+
 data Nat = S Nat | Z
 data Index (n :: Nat) = Index
 data Token (f :: * -> *) = Token
 data Tag (fs ::[* -> *]) = Tag
 
-type family Position (f :: * -> *) fs :: Nat where
-  Position f (f ': fs)  = 'Z
-  Position f (x ': fs)  = 'S (Position f fs)
+type family Place (f :: * -> *) fs :: Nat where
+  Place f (f ': fs)  = 'Z
+  Place f (x ': fs)  = 'S (Place f fs)
 
 --------------------------------------------------------------------------------
 
@@ -83,33 +95,61 @@ instance Functor (Effs fs) where
   fmap f (Here fa out)  = Here fa (f . out)
   fmap f (There fs) = There (fmap f fs)
   {-#INLINE fmap #-}
+
+{- | Lan generalizes the device by which @Effs@ is a functor,
+     wrapping anything of kind @*->*@ in the form of a functor,
+     by so to speak accumulating fmaps. (It is @Lan Identity@ in the sense
+     of the 
+     <https://hackage.haskell.org/package/kan-extensions-4.2.3/docs/Data-Functor-Kan-Lan.html#t:Lan kan-extensions>
+     library; we are following the remarks of Oleg in the paper on
+     <http://okmij.org/ftp/Haskell/extensible/more.pdf \"freer\" monads>.) 
+     Thus see the type of 'scrutinize' and 'project'
+
+> scrutinize :: Effs (f ': fs) v -> Sum (Lan f) (Effs fs) v
+> project :: Effs fs r -> Maybe (Lan f r)
   
-{- | @Effs@ is a functor, because it internal performs this evasion.
-     In order to inspect a list of non-functors, we frequently need
-     a functorized representation, which Lan provides. Thus see the
-     type of 'scrutinize' which is needed to write recursive loops
-     over a stream with many non-functor breaks \'suspended\' in it.
-  
+     which are used in place of a direct pattern match when 
+     writing recursive loops  over a stream with many 
+     non-functor effect steps \'suspended\' in it.
   -}
+  
 data Lan f r = forall x . Lan !(f x) (x -> r)
+
 instance Functor (Lan f) where 
   fmap f (Lan fx out) = Lan fx (f . out)
   {-#INLINE fmap #-}
 
 --------------------------------------------------------------------------------
+{- | The @At f n fs@ constraint is satified when f is the n\'th type
+     in a type-level list of types. Saying that
 
-class At f (n :: Nat) fs where
+> At f n fs
+ 
+     is a bit like saying
+
+> fs !! f == n
+
+
+     When f is permitted by having that position, we can @inject@
+     an item of that type into the sum. That is, 
+
+> injectAt n (Lan fx id) 
+
+    is a bit like @Left@ or @Either@ (or rather @InL@ or @InR@). 
+
+-}
+class At (n :: Nat) f fs where
   injectAt  :: Index n -> Lan f r -> Effs fs r
   projectAt :: Index n -> Effs fs r -> Maybe (Lan f r)
 
-instance (fs ~ (f ': fs')) => At f 'Z fs  where
-  injectAt Index  (Lan f out)  = Here f out
+instance (fs ~ (f ': fs')) => At 'Z f fs  where
+  injectAt Index (Lan f out)   = Here f out
   {-#INLINE injectAt #-}
   projectAt Index (Here x out) = Just (Lan x out)
   projectAt _ _                = Nothing
   {-#INLINE projectAt #-}
 
-instance (fs ~ (f' ': fs'), At f n fs') => At f ('S n) fs  where
+instance (fs ~ (f' ': fs'), At n f fs') => At ('S n) f fs  where
   injectAt Index  f          = There (injectAt (Index :: Index n) f)
   {-#INLINE injectAt #-}
   projectAt Index (There x)  = projectAt (Index :: Index n) x
@@ -117,29 +157,56 @@ instance (fs ~ (f' ': fs'), At f n fs') => At f ('S n) fs  where
   {-#INLINE projectAt #-}
 
 --------------------------------------------------------------------------------
+{- | @Elem f fs@ says that f is one of the functors in the sum @fs@
+     In addition to using its methods the class will frequently 
+     appear in user-written constraints. In error messages and type queries,
+     however, its constraint is more commonly seen:
 
-class (At f (Position f fs) fs) => Elem f fs where
+>    At f (Place f fs) fs
+
+     This means something like
+
+>    fs !! Place f fs == f
+
+     or \"f is at (the place of f in the fs) in the fs\" which is 
+     how we say that it is one of the possibilities, i.e. that @Elem f fs@
+
+-}
+class (At (Place f fs) f fs) => Elem f fs where
   inject  :: Lan f r -> Effs fs r
   project :: Effs fs r -> Maybe (Lan f r)
 
-instance (At f (Position f fs) fs) => Elem f fs where
-  inject = injectAt (Index :: Index (Position f fs))
+instance (At (Place f fs) f fs) => Elem f fs where
+  inject = injectAt (Index :: Index (Place f fs))
   {-#INLINE inject  #-}
-  project = projectAt (Index :: Index (Position f fs))
+  project = projectAt (Index :: Index (Place f fs))
   {-#INLINE project #-}
 
 --------------------------------------------------------------------------------
 
+{- | @scrutinize@, called @decomp@ in @freer@ ,
+     gives more help to the type checker than directly 
+     pattern matching on 'Here' and 'There'. So we shall
+
+>  loop stream = do 
+>     e <- inspect stream                    -- run the underlying effect until
+>     case e of
+>        Left r -> return r                  -- we either come to the end
+>        Right eff -> case scrutinize eff of -- or meet a break; 
+>           InL (Lan fx out) -> ...          -- if it is the leftmost 'functor', ...
+>           InR other        -> ...          -- else ...
+-}
 scrutinize :: Effs (f ': fs) v -> Sum (Lan f) (Effs fs) v
 scrutinize (Here fx out)  = InL (Lan fx out)
 scrutinize (There v) = InR v
-{-#INLINABLE scrutinize #-}
+{-#INLINE scrutinize #-}
 
 -- -----------------------------------------------------------------------------
 -- Various utilities for mapping over particular Effs
 -- -----------------------------------------------------------------------------
+{- | @eitherEff@ is a remote analogue of Prelude.either 
 
-
+-}
 eitherEff :: (forall x . f x -> g x) 
           -> (forall x . Effs fs x -> Effs gs x)
           -> Effs (f ': fs) r 
@@ -147,12 +214,17 @@ eitherEff :: (forall x . f x -> g x)
 eitherEff phi psi (Here f out) = Here (phi f) out
 eitherEff phi psi (There rest) = There (psi rest)
 
+
+-- | Map over the first functor-like possibility
 mapHere :: (forall x . f x -> g x) -> Effs (f ': fs) r -> Effs (g ': fs) r
 mapHere phi = eitherEff phi id 
 
+-- | Map over the rest of the possibilities, en masse.
 mapThere :: (forall x . Effs fs x -> Effs gs x) -> Effs (f ': fs) r -> Effs (f ': gs) r
 mapThere phi = eitherEff id phi
 
+
+-- | Eliminate the first possibility by assimilating it to the others.
 forEff :: Effs (f ': fs) r -> (forall x . f x -> Effs fs x) ->  Effs fs r
 forEff e phi = loop e where
   loop effs = case effs of
