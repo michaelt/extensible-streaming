@@ -41,7 +41,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
     import qualified Data.Map as M
 
     main =  do
-        let effects = do                                           -- Superimposed effects:
+        let effects = do                                               -- SUPERIMPOSED EFFECTS:
              yield "I am a String; I was yielded."                          -- yield String
              n <- get                                                       -- get Int state
              tweet ("Tweet: I used `get` and got an Int: " ++ show n)       -- tweet
@@ -55,14 +55,14 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
              put (n+1 ::Integer)                                            -- put Integer state
         effects
         effects
-
-      & pureHttp site                        
-      & ioTweetInterpreter                   -- render Tweets to stdout
-      & runState (2::Integer)                -- initialize Integer state
-      & runState (2::Int)                    -- initialize Int state
-      & S.stdoutLn' . extrudeYieldsAt ""      -- interpret yields at String
-      & S.print . extrudeYieldsAt ("",0::Int) -- interpret yields at (Int,String)
-      & runEffects                           -- kill vestigial wrapping
+                                                                       -- SUCCESSIVE INTERPRETERS:
+      & pureHttp site                                                       -- realize site as a Map
+      & ioTweetInterpreter                                                  -- render Tweets to stdout
+      & runState (2::Integer)                                               -- initialize Integer state
+      & runState (2::Int)                                                   -- initialize Int state
+      & S.stdoutLn' . extrudeYieldsAt ""                                    -- interpret yields at String
+      & S.print . extrudeYieldsAt ("",0::Int)                               -- interpret yields at (Int,String)
+      & runEffects                                                          -- kill vestigial wrapping
       & (>>= io)
      where
       io (int,(integer,(site,()))) = do
@@ -73,7 +73,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         print integer
         putStrLn "Current site: "
         mapM_ print (M.toList site)
-    
+                                                                       -- OUTPUT:
     -- >>> main
     -- I am a String; I was yielded.
     -- Tweet: I used `get` and got an Int: 2
