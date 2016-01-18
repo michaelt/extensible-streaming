@@ -63,7 +63,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
       & S.stdoutLn' . extrudeYieldsAt ""                                    -- interpret yields at String
       & S.print . extrudeYieldsAt ("",0::Int)                               -- interpret yields at (Int,String)
       & runEffects                                                          -- kill vestigial wrapping
-      & (>>= io)
+      & (>>= io)                                                            -- report on final value returned
      where
       io (int,(integer,(site,()))) = do
         putStrLn "\n-------\nFinished\n-------"
@@ -74,24 +74,25 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         putStrLn "Current site: "
         mapM_ print (M.toList site)
                                                                        -- OUTPUT:
-    -- >>> main
-    -- I am a String; I was yielded.
-    -- Tweet: I used `get` and got an Int: 2
-    -- Tweet: Check out this comments page I read: "Nice comment page."
-    -- ("I am a (String, Int) pair, and was yielded: ",3)
-    -- I am a String; I was yielded.
-    -- Tweet: I used `get` and got an Int: 3
-    -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
-    -- ("I am a (String, Int) pair, and was yielded: ",4)
-    --
-    -- -------
-    -- Finished
-    -- -------
-    -- Final Int state:  4
-    -- Final Integer state:  4
-    -- Current site:
-    -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
-    -- ("welcome","hello")
+                                                                       
+          -- >>> main
+          -- I am a String; I was yielded.
+          -- Tweet: I used `get` and got an Int: 2
+          -- Tweet: Check out this comments page I read: "Nice comment page."
+          -- ("I am a (String, Int) pair, and was yielded: ",3)
+          -- I am a String; I was yielded.
+          -- Tweet: I used `get` and got an Int: 3
+          -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
+          -- ("I am a (String, Int) pair, and was yielded: ",4)
+          --
+          -- -------
+          -- Finished
+          -- -------
+          -- Final Int state:  4
+          -- Final Integer state:  4
+          -- Current site:
+          -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
+          -- ("welcome","hello")
 
 
     --------------------
