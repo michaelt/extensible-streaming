@@ -25,6 +25,8 @@ Whatever the merits of those remarks, here is a simple test program exhibiting t
 
 the "interpreters" then put perfectly trivial interpretations on these 'effects'
 
+```haskell
+
     {-# LANGUAGE GADTs #-}
     {-# LANGUAGE TypeFamilies #-}
     {-# LANGUAGE TypeOperators #-}
@@ -75,24 +77,25 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
         mapM_ print (M.toList site)
                                                                        -- OUTPUT:
                                                                        
-          -- >>> main
-          -- I am a String; I was yielded.
-          -- Tweet: I used `get` and got an Int: 2
-          -- Tweet: Check out this comments page I read: "Nice comment page."
-          -- ("I am a (String, Int) pair, and was yielded: ",3)
-          -- I am a String; I was yielded.
-          -- Tweet: I used `get` and got an Int: 3
-          -- Tweet: Check out this comments page I read: "Nice comment page.\nI just got the number 2\nNice comment page."
-          -- ("I am a (String, Int) pair, and was yielded: ",4)
-          --
-          -- -------
-          -- Finished
-          -- -------
-          -- Final Int state:  4
-          -- Final Integer state:  4
-          -- Current site:
-          -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
-          -- ("welcome","hello")
+        -- >>> main
+        -- I am a String; I was yielded.
+        -- Tweet: I used `get` and got an Int: 2
+        -- Tweet: Check out this comments page: "Nice comment page."
+        -- ("A (String, Int) pair is hereby yielded: ",3)
+        -- I am a String; I was yielded.
+        -- Tweet: I used `get` and got an Int: 3
+        -- Tweet: Check out this comments page: "Nice comment page.\nI just got the number 2\nNice comment page."
+        -- ("A (String, Int) pair is hereby yielded: ",4)
+        --
+        -- -------
+        -- Finished
+        -- -------
+        -- Final Int state:  4
+        -- Final Integer state:  4
+        -- Current site:
+        -- ("comments","Nice comment page.\nI just got the number 2\nNice comment page.\nI just got the number 3")
+        -- ("welcome","hello")
+
 
 
     --------------------
@@ -215,6 +218,7 @@ the "interpreters" then put perfectly trivial interpretations on these 'effects'
               Nothing -> loop (M.insert "comments" b m) (out "comments page created")
               Just a  -> loop (M.insert "comments" (a++"\n" ++ b) m) (out "comment added")
             InR fs                   -> wrap (fmap (loop m) fs)
-    
+
+```
 
 
